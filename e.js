@@ -112,10 +112,22 @@ ConcatenativeFunction.define = function(k,what){
                 vm.x.push(runNative);
                 return compileLiterals.apply(this,arguments);
             } else {
-                return runNative.apply(this,arguments);
+                // Push args onto the stack???
+                return runNative();
             }
         }
     });
+    
+    Object.defineProperty(vm,'cfa',{
+        get(){
+            return fn ;
+        },
+        set(cfa){
+            fn = cfa ;
+        },
+        configurable:true,
+        enumerable:true
+    }) ;
 } ;
 
 /* Add a set of functions contained within an object to a prototype */
@@ -133,8 +145,8 @@ ConcatenativeFunction.import = function(lib){
 function runitl() {
     while (vm.i !== undefined) {
         var r = vm.x[vm.i++]() ;
-        if (r && typeof r.then==='function')
-            return r.then(runitl,function(x){ throw x }) ;
+//        if (r && typeof r.then==='function')
+//            return r.then(runitl,function(x){ throw x }) ;
     }
 }
 
@@ -146,10 +158,21 @@ function immediate(fn) {
 var corelib = {
     create(name){
         var start = vm.x.length ;
-        ConcatenativeFunction.define(name,function(){
-            vm.s.push(vm.x[start]) ;
-        })
+        ConcatenativeFunction.define(name,start) ;
     },
+    does:immediate(function(){
+        var start = vm.x.length+2 ;
+        vm.compiling = function(){
+            var data = vm.cfa() ; ;
+            vm.cfa = function runDoes(){
+                vm.s.push(data) ;
+                vm.i = start ;
+                runitl() ;
+            } ;
+        } ;
+        vm.x.push(vm.compiling) ;
+        vm.x.push(corelib.exit) ;
+    }),
     data(a){ vm.x.push(a) },
     define(name){
         var start = vm.x.length ;
@@ -172,6 +195,8 @@ var corelib = {
         immediate(vm.compiling) ;
     }),
     here(){ return vm.x.length },
+    load(a){ return vm.x[a] },
+    store(v,a){ return vm.x[a] = v },
     swap(a,b) { vm.s.push(b,a) },
     spread(arr){ vm.s.push.apply(vm.s,arr) },
     gather(idx){
@@ -193,12 +218,19 @@ var corelib = {
     div(a,b) { return a/b },
 //    '+'(a,b) { return corelib.add.apply(this,arguments) },
     print(a) { console.log("CAT>",a) },
-    nop() {} // Used to compile literals
+    'debugger'() { debugger } 
 } ;
+
+function aNativeFunction(x,y) {
+    console.log("I am native",x+y)
+}
 
 ConcatenativeFunction.import(corelib);
 
 C
+('dup').define (0).pick .return
+
+/*
 ('test').define
     (123,456).add
     (11).swap.print.print
@@ -220,10 +252,31 @@ C
 ('var').define
     .swap .create .data
     .return
+*/
+('printer').define
+    .dup .create .data
+    .does .load .print
+    .return
 
+
+('hello').printer
+('Matthew').printer
+
+.hello
+.Matthew
+
+/*('native').define
+    .create .data
+    .does .calljs
+    .return
+*
 ([9,5,2],'cjs').var
-.cjs .print
+.cjs .dup .print .load .print
+/*
+('aNativeFunction',aNativeFunction).native
+*/
 
+/*
 function delay() {
     return new Promise((function ($return, $error) {
         console.log("start delay") ;
@@ -234,7 +287,14 @@ function delay() {
     }).bind(this));
 }
 
-C('start','end').print(delay).calljs.print.print
+C('xxx').define
+    ('start').print
+    (delay).calljs
+    ('end').print
+    .return
+    
+.xxx()    
+*/
 
 //function log(z) { console.log(z) }
 //C(log,888,999).native
