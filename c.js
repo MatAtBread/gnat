@@ -12,12 +12,12 @@ Since JS does not allow the syntax "Obj.abc.1.def", literals are passed as argum
 
      Obj.abc(1).def
      
-which should be logically thotught of as:
+which should be logically thought of as:
 
     .abc  (1) .def
     
 ie: .abc compiles its runtime, (1) compiles the literal, .def compiles it's runtime. For brevity, literals can be 
-comma separated (since they are actually function parameters:
+comma separated (since they are actually function parameters):
 
     .abc  (1,'Hello',{foo:123}) .def
 
@@ -40,6 +40,9 @@ compiled object [NB: This may change in the future for example to a word such as
 function ConcatenativeFunction(fn) {
     if (fn instanceof ConcatenativeFunction)
         return fn ;
+    if (!(fn instanceof Function))
+        throw new Error("ConcatenativeFunction: "+fn.toString()+" is not a function") ;
+    
     Object.setPrototypeOf(fn,this.__proto__) ;
     fn.constructor = this.constructor ;
     return fn ;
@@ -58,7 +61,8 @@ ConcatenativeFunction.define = function(k,fn){
 
 /* Add a set of functions contained within an object to a prototype */
 ConcatenativeFunction.import = function(lib){
-    Object.getOwnPropertyNames(lib).forEach(k => ConcatenativeFunction.define(k,lib[k])) ;
+    Object.getOwnPropertyNames(lib).forEach(k => ConcatenativeFunction.define(k,
+        typeof lib[k]==="function"?lib[k]:function(){ return lib[k] })) ;
 } ;
 
 /* Base ConcatenativeFunction prototypes used to compile and execute */
@@ -101,7 +105,7 @@ ConcatenativeFunction.prototype = {
                 return this.native(fn) ;
             }
         }) ; 
-        return C() ;
+        return K.begin ;
     },
     immediate(name) {
         var fn = this ;
@@ -111,7 +115,7 @@ ConcatenativeFunction.prototype = {
                 return this ;
             }
         }) ; 
-        return C() ;
+        return K.begin ;
     },
     // Run the current vm
     exec(){
@@ -190,47 +194,48 @@ ConcatenativeFunction.import(Math);
 
 var vm = {s:[],r:[]} ;
 
-var C = new ConcatenativeFunction(function cat(){
-    var self ;
-    if (this instanceof ConcatenativeFunction) {
-        if (arguments.length===0)
-            return this.exec() ;
-        self = this ;
-    } else {
-        self = new ConcatenativeFunction(function() { 
-            return cat.apply(self,arguments) ;
-        }) ;
-        self.vm = Object.assign({},vm,{x:[]}) ;
-    }
-    for (var i=0; i<arguments.length;i++) {
-        if (typeof arguments[i]==="function")
-            self.native(arguments[i]) ;
-        else
-            self.lit(arguments[i]) ;
-    }
-    return self ;
-}) ;
-
 var K = {
+    C:new ConcatenativeFunction(function cat(){
+        var self ;
+        if (this instanceof ConcatenativeFunction) {
+            if (arguments.length===0)
+                return this.exec() ;
+            self = this ;
+        } else {
+            self = new ConcatenativeFunction(function() { 
+                return cat.apply(self,arguments) ;
+            }) ;
+            self.vm = Object.assign({},vm,{x:[]}) ;
+        }
+        for (var i=0; i<arguments.length;i++) {
+            if (typeof arguments[i]==="function")
+                self.native(arguments[i]) ;
+            else
+                self.lit(arguments[i]) ;
+        }
+        return self ;
+    }),
     get begin() {
-        return C.apply(null,arguments) ;
+        return this.C() ;
     }
-}
+};
 
 
-C(0).pick.define('dup')
+K.begin
+    (0).pick
+.define('dup') ;
 
-C()
+K.begin
     ("Hi!").print .immediate('Hi')
     .dup.Hi.mul .define('sq')
     (11).sq
     (12).sq
     (2).gather.print
-() ;
+.end ;
 
-C(20)
-    .sq.print
-() ;
+K.begin
+    (20).sq.print
+.end ;
 
 K.begin
     (require) .define('require')
@@ -246,9 +251,9 @@ K.begin
     .print
 .end
 
-console.log(C().vm.s) ;
+console.log(K.begin.vm.s) ;
 /*
-C()
+K.begin
     .here('I am here:').add.print.immediate('Here')
     (1).lit(2).add.print.Here.define('test')
     .test
@@ -256,4 +261,4 @@ C()
 */
 //    (1).add.define('inc')
 //    (10).inc.define('WhatIs1+10');
-//console.log(C()['WhatIs1+10']()) ;
+//console.log(K.begin['WhatIs1+10']()) ;
