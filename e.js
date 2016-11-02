@@ -55,7 +55,7 @@ function ConcatenativeFunction(fn) {
 /* Base ConcatenativeFunction prototypes used to compile and execute */
 ConcatenativeFunction.prototype = Object.create(Function.prototype) ;
 
-var C = new ConcatenativeFunction(function(){
+var C = new ConcatenativeFunction(function _c(){
     if (vm.compiling) {
         // Compile all the arguments as literals
         return compileLiterals.apply(this,arguments);
@@ -81,13 +81,13 @@ function compileLiterals() {
 }
 
 /* Add a native JS function to the prototypes */
-ConcatenativeFunction.define = function(k,what){
+ConcatenativeFunction.define = function staticDefine(k,what){
     if (typeof k !== 'string') {
         throw new TypeError(JSON.stringify(k)+" is not a valid name")
     }
     var fn ;
     if (typeof what !== "function") {
-        fn = function(){ return what } ;
+        fn = function _cfa(){ return what } ;
     } else {
         fn = what ;
     }
@@ -102,10 +102,11 @@ ConcatenativeFunction.define = function(k,what){
         return C ;
     }
     
+    vm.x.push("DEFINED:"+k) ;
     Object.defineProperty(this.prototype,k,{
         enumerable:true,
         get(){
-            if (vm.compiling && !what.immediate) {
+            if (vm.compiling && !fn.immediate) {
                 runNative.valueOf = function() {
                     return k
                 };
@@ -131,7 +132,7 @@ ConcatenativeFunction.define = function(k,what){
 } ;
 
 /* Add a set of functions contained within an object to a prototype */
-ConcatenativeFunction.import = function(lib){
+ConcatenativeFunction.import = function staticImport(lib){
     Object.getOwnPropertyNames(lib).forEach(k => {
         var desc = Object.getOwnPropertyDescriptor(lib,k) ;
         if (desc.get) {
@@ -144,7 +145,8 @@ ConcatenativeFunction.import = function(lib){
 
 function runitl() {
     while (vm.i !== undefined) {
-        var r = vm.x[vm.i++]() ;
+        var r = vm.x[vm.i++]
+        r = r() ;
 //        if (r && typeof r.then==='function')
 //            return r.then(runitl,function(x){ throw x }) ;
     }
@@ -157,26 +159,27 @@ function immediate(fn) {
 
 var corelib = {
     create(name){
-        var start = vm.x.length ;
+        var start = vm.x.length+1 ;
         ConcatenativeFunction.define(name,start) ;
     },
-    does:immediate(function(){
+    does:immediate(function _does(){
         var start = vm.x.length+2 ;
-        vm.compiling = function(){
-            var data = vm.cfa() ; ;
+        vm.compiling = function _setCFA(){
+            var link = vm.cfa ;
             vm.cfa = function runDoes(){
-                vm.s.push(data) ;
+                vm.s.push(link()) ;
+                vm.r.push(vm.i) ;
                 vm.i = start ;
-                runitl() ;
+                if (vm.r.length===1)
+                    runitl() ;
             } ;
         } ;
-        vm.x.push(vm.compiling) ;
-        vm.x.push(corelib.exit) ;
+        vm.x.push(vm.compiling,corelib.exit) ;
     }),
-    data(a){ vm.x.push(a) },
+    store(a){ vm.x.push(a) },
     define(name){
-        var start = vm.x.length ;
-        vm.compiling = function(){
+        var start = vm.x.length+1 ;
+        vm.compiling = function _defineCFA(){
             vm.r.push(vm.i) ;
             vm.i = start ;
             if (vm.r.length===1)
@@ -187,16 +190,15 @@ var corelib = {
     exit(){
         vm.i = vm.r.pop() ;
     },
-    'return':immediate(function(){
+    'return':immediate(function _return(){
         vm.x.push(corelib.exit) ;
         vm.compiling = undefined ;
     }),
-    immediate:immediate(function(){
+    immediate:immediate(function _immediate(){
         immediate(vm.compiling) ;
     }),
     here(){ return vm.x.length },
     load(a){ return vm.x[a] },
-    store(v,a){ return vm.x[a] = v },
     swap(a,b) { vm.s.push(b,a) },
     spread(arr){ vm.s.push.apply(vm.s,arr) },
     gather(idx){
@@ -217,8 +219,11 @@ var corelib = {
     mul(a,b) { return a*b },
     div(a,b) { return a/b },
 //    '+'(a,b) { return corelib.add.apply(this,arguments) },
-    print(a) { console.log("CAT>",a) },
-    'debugger'() { debugger } 
+    print(a) { 
+//        console.log("CAT>",a) 
+        process.stdout.write(a.toString())
+    },
+    'debugger'() { console.log("S>",vm.s); debugger } 
 } ;
 
 function aNativeFunction(x,y) {
@@ -227,8 +232,11 @@ function aNativeFunction(x,y) {
 
 ConcatenativeFunction.import(corelib);
 
+console.log("require.length",require.length);
+
 C
 ('dup').define (0).pick .return
+('crlf').define ('\n').print .return
 
 /*
 ('test').define
@@ -250,31 +258,43 @@ C
     (123).Hi.print.return
 
 ('var').define
-    .swap .create .data
-    .return
-*/
-('printer').define
-    .dup .create .data
-    .does .load .print
-    .return
-
-
-('hello').printer
-('Matthew').printer
-
-.hello
-.Matthew
-
-/*('native').define
-    .create .data
-    .does .calljs
+    .swap .create .store
     .return
 *
-([9,5,2],'cjs').var
-.cjs .dup .print .load .print
-/*
-('aNativeFunction',aNativeFunction).native
+('printer').define
+    .dup .create .store 
+    .does .load (' ').add .print
+    .return
+
+('hello').printer
+.hello.crlf
+('Matthew').printer
+.hello.Matthew.crlf
 */
+('native').define /* name, function */
+    .create .store
+    .does .load .calljs 
+    .return
+
+('require',require).native
+
+('import').define
+    .dup .create 
+    .require
+    .store
+    .does 
+    .load 
+    ((field,imp)=>imp[field]) .calljs 
+    .return
+
+('fs').import
+
+('package.json') ('readFileSync').fs .calljs .print
+//.debugger
+
+//.fs //.debugger
+
+//('fs').require (fs=>fs.readFileSync).calljs.print
 
 /*
 function delay() {
@@ -302,7 +322,8 @@ C('xxx').define
 //C.a() ;
 //C.a() ;
 //console.log(C.add(123,456))
-console.log("----------\n",vm.s,vm.r);
+console.log("----------");
+//console.log("----------\n",vm.s,vm.r);
 console.log(Object.getOwnPropertyNames(ConcatenativeFunction.prototype).join())
 //ConcatenativeFunction.import(Math);
 //ConcatenativeFunction.import(Promise);
