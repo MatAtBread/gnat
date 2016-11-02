@@ -61,8 +61,7 @@ var C = new ConcatenativeFunction(function(){
         return compileLiterals.apply(this,arguments);
     } else {
         if (arguments.length===0) {
-            while (vm.i !== undefined)
-                vm.x[vm.i++]() ;
+            runitl() ;
         } else {
             [].push.apply(vm.s,[].reverse.call(arguments));
         }
@@ -83,6 +82,9 @@ function compileLiterals() {
 
 /* Add a native JS function to the prototypes */
 ConcatenativeFunction.define = function(k,what){
+    if (typeof k !== 'string') {
+        throw new TypeError(JSON.stringify(k)+" is not a valid name")
+    }
     var fn ;
     if (typeof what !== "function") {
         fn = function(){ return what } ;
@@ -128,18 +130,13 @@ ConcatenativeFunction.import = function(lib){
     }) ;
 } ;
 
-ConcatenativeFunction.prototype.define = function(name){
-    var start = vm.x.length ;
-    vm.compiling = function(){
-        vm.r.push(vm.i) ;
-        vm.i = start ;
-        if (vm.r.length===1)
-            while (vm.i !== undefined)
-                vm.x[vm.i++]() ;
-    } ;
-    ConcatenativeFunction.define(name,vm.compiling) ;
-    return C ;
-};
+function runitl() {
+    while (vm.i !== undefined) {
+        var r = vm.x[vm.i++]() ;
+        if (r && typeof r.then==='function')
+            return r.then(runitl,function(x){ throw x }) ;
+    }
+}
 
 function immediate(fn) {
     fn.immediate = true ;
@@ -147,6 +144,23 @@ function immediate(fn) {
 };
 
 var corelib = {
+    create(name){
+        var start = vm.x.length ;
+        ConcatenativeFunction.define(name,function(){
+            vm.s.push(vm.x[start]) ;
+        })
+    },
+    data(a){ vm.x.push(a) },
+    define(name){
+        var start = vm.x.length ;
+        vm.compiling = function(){
+            vm.r.push(vm.i) ;
+            vm.i = start ;
+            if (vm.r.length===1)
+                runitl() ;
+        } ;
+        ConcatenativeFunction.define(name,vm.compiling)
+    },
     exit(){
         vm.i = vm.r.pop() ;
     },
@@ -170,6 +184,9 @@ var corelib = {
         return (vm.s[vm.s.length-idx-1]) ;
     },
     drop(a) {},
+    calljs(fn) {
+        return fn.apply(null,vm.s.splice(vm.s.length-fn.length,fn.length)) ;
+    },
     add(a,b) { return a+b },
     sub(a,b) { return a-b },
     mul(a,b) { return a*b },
@@ -182,29 +199,51 @@ var corelib = {
 ConcatenativeFunction.import(corelib);
 
 C
-.define('test')
+('test').define
     (123,456).add
     (11).swap.print.print
     .return
 
-.define('mat')
+('mat').define
     ("Hello Mat").print
     .test
     ("ok").print
     .return
 
-.define('Hi').immediate
+('Hi').define.immediate
     ('hi, immediately').print
     .return
 
-.define('a')
+('a').define
     (123).Hi.print.return
-    
-C.a() ;
-C.a() ;
-//console.log(C.add(123,456))
-//console.log(vm);
 
+('var').define
+    .swap .create .data
+    .return
+
+([9,5,2],'cjs').var
+.cjs .print
+
+function delay() {
+    return new Promise((function ($return, $error) {
+        console.log("start delay") ;
+        setTimeout(function () {
+            console.log("end delay") ;
+            return $return(10);
+        }, 500);
+    }).bind(this));
+}
+
+C('start','end').print(delay).calljs.print.print
+
+//function log(z) { console.log(z) }
+//C(log,888,999).native
+
+//C.a() ;
+//C.a() ;
+//console.log(C.add(123,456))
+console.log("----------\n",vm.s,vm.r);
+console.log(Object.getOwnPropertyNames(ConcatenativeFunction.prototype).join())
 //ConcatenativeFunction.import(Math);
 //ConcatenativeFunction.import(Promise);
 
